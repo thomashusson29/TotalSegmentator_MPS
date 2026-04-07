@@ -1,0 +1,18 @@
+
+# OS files
+.DS_Store
+
+# Python
+__pycache__/
+.venv/
+
+# Generated outputs
+output/
+
+# --- git-ignore-auto (2026-04-07) ---
+/output/scalarvolume17/abdominal_muscles.dcm
+/.venv/lib/python3.13/site-packages/highdicom/_modules.py
+/.venv/lib/python3.13/site-packages/torch/lib/libtorch_python.dylib
+/.venv/lib/python3.13/site-packages/torch/lib/libtorch_cpu.dylib
+/.venv/lib/python3.13/site-packages/SimpleITK/_SimpleITK.abi3.so
+/.venv/lib/python3.13/site-packages/pyarrow/libarrow.2300.dylib
