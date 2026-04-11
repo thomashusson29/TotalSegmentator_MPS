@@ -1,0 +1,8 @@
+TotalSegmentator
+nibabel
+numpy
+matplotlib
+SimpleITK
+scipy
+pydicom
+

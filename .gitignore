@@ -59,3 +59,8 @@ tdm_elena_savier*/
 !/dicom/**/*.md
 !/dicom/**/*.py
 !/dicom/**/*.ipynb
+
+# --- git-ignore-auto (2026-04-11) ---
+/output/abdominal_muscles_SD_avantTH_20260409_222500/tissue/source_T4_L4_ct.nii.gz
+/output/abdominal_muscles_SD_M0_20260410_173754/tissue/source_T4_L4_ct.nii.gz
+/tdm_elena_savier\ copie/GCE_avantTHbis/DICOMDIR
