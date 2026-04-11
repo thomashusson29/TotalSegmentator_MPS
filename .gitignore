@@ -5,6 +5,7 @@
 # Python
 __pycache__/
 .venv/
+.totalsegmentator/
 
 # Generated outputs
 output/
@@ -16,3 +17,38 @@ output/
 /.venv/lib/python3.13/site-packages/torch/lib/libtorch_cpu.dylib
 /.venv/lib/python3.13/site-packages/SimpleITK/_SimpleITK.abi3.so
 /.venv/lib/python3.13/site-packages/pyarrow/libarrow.2300.dylib
+
+# --- git-ignore-auto (2026-04-09) ---
+/output/abdominal_muscles_AAW_avantTH_20260409_162611/tissue/source_T4_L4_ct.nii.gz
+/output/abdominal_muscles_ScalarVolume_17_20260408_185857/tissue/source_zslab_ct.nii.gz
+/output/abdominal_muscles_ScalarVolume_17_20260408_184751/tissue/source_zslab_ct.nii.gz
+/output/abdominal_muscles_ScalarVolume_17_20260408_192102/tissue/source_zslab_ct.nii.gz
+/.totalsegmentator/nnunet/results/Dataset952_abdominal_muscles_167subj/nnUNetTrainer_DASegOrd0_NoMirroring__nnUNetPlans__3d_fullres_high/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset297_TotalSegmentator_total_3mm_1559subj.zip
+/.totalsegmentator/nnunet/results/backup_corrupt_model_294_20260409/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset293_TotalSegmentator_part3_cardiac_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset570_ct_liver_segments/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset295_TotalSegmentator_part5_ribs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset298_TotalSegmentator_total_6mm_1559subj.zip
+/.totalsegmentator/nnunet/results/Dataset008_HepaticVessel/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset300_body_6mm_1559subj.zip
+/.totalsegmentator/nnunet/results/Dataset300_body_6mm_1559subj/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset291_TotalSegmentator_part1_organs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset298_TotalSegmentator_total_6mm_1559subj/nnUNetTrainer_4000epochs_NoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset485_tissue_4types_1559subj/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset294_TotalSegmentator_part4_muscles_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/.totalsegmentator/nnunet/results/Dataset297_TotalSegmentator_total_3mm_1559subj/nnUNetTrainer_4000epochs_NoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
+/tdm_elena_savier/GCE_avantTHbis/DICOMDIR
+
+# Data folders kept locally only.
+tdm_elena_savier*/
+**/tdm_elena_savier*/
+
+/dicom/**
+!/dicom/**/
+!/dicom/**/*.csv
+!/dicom/**/*.xlsx
+!/dicom/**/*.md
+!/dicom/**/*.py
+!/dicom/**/*.ipynb
