@@ -41,6 +41,13 @@ output/
 /.totalsegmentator/nnunet/results/Dataset297_TotalSegmentator_total_3mm_1559subj/nnUNetTrainer_4000epochs_NoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth
 /tdm_elena_savier/GCE_avantTHbis/DICOMDIR
 
+# --- git-ignore-auto (2026-04-11) ---
+tdm*/
+**/tdm*/
+dicom*/
+**/dicom*/
+gpu_rent/local_only/
+
 # Data folders kept locally only.
 tdm_elena_savier*/
 **/tdm_elena_savier*/
