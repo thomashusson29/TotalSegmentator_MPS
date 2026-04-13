@@ -264,7 +264,7 @@ for case_dir in "${case_dirs[@]}"; do
     cmd+=(--with-tocsv)
   fi
 
-  if "${cmd[@]}" >"${case_log}" 2>&1; then
+  if "${cmd[@]}" 2>&1 | tee "${case_log}"; then
     end_epoch="$(date +%s)"
     elapsed="$((end_epoch - start_epoch))"
     printf '%s\n' "${elapsed}" > "${case_time}"
