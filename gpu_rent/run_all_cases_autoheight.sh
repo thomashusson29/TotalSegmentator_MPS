@@ -2,9 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/workspace/TotalSegmentator_MPS}"
-INPUT_ROOT="${INPUT_ROOT:-/input/tdm_elena_savier_anonymized_cohort26_keep_patientid}"
+INPUT_ROOT="${INPUT_ROOT:-/workspace/tdm_elena_savier_anonymized_cohort26_keep_patientid}"
 CASE_METADATA_CSV="${CASE_METADATA_CSV:-${INPUT_ROOT}/case_metadata.csv}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/output}"
 TOTALSEG_DEVICE="${TOTALSEG_DEVICE:-gpu}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 
@@ -16,6 +15,13 @@ WITH_TOCSV="${WITH_TOCSV:-1}"
 
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
+
+RUN_NAME="${RUN_NAME:-batch_$(date +%Y%m%d_%H%M%S)}"
+RUN_ROOT="${RUN_ROOT:-/workspace/run_outputs/${RUN_NAME}}"
+BUNDLES_DIR="${BUNDLES_DIR:-${RUN_ROOT}/bundles}"
+LOGS_DIR="${LOGS_DIR:-${RUN_ROOT}/logs}"
+TABLES_DIR="${TABLES_DIR:-${RUN_ROOT}/tables}"
+EXPORTS_3D_DIR="${EXPORTS_3D_DIR:-${RUN_ROOT}/3d_exports}"
 
 if [[ ! -d "${INPUT_ROOT}" ]]; then
   echo "INPUT_ROOT not found: ${INPUT_ROOT}" >&2
@@ -32,13 +38,61 @@ if [[ -z "${TOTALSEG_LICENSE_NUMBER:-}" ]]; then
   exit 1
 fi
 
-mkdir -p "${OUTPUT_ROOT}"
+mkdir -p "${RUN_ROOT}" "${BUNDLES_DIR}" "${LOGS_DIR}" "${TABLES_DIR}" "${EXPORTS_3D_DIR}"
+mkdir -p \
+  "${EXPORTS_3D_DIR}/abdominal_muscles" \
+  "${EXPORTS_3D_DIR}/odiasp" \
+  "${EXPORTS_3D_DIR}/tissue_original" \
+  "${EXPORTS_3D_DIR}/tissue_T4_L4" \
+  "${EXPORTS_3D_DIR}/total"
+
 cd "${REPO_ROOT}"
 
-batch_log="${OUTPUT_ROOT}/batch_run.log"
-batch_csv="${OUTPUT_ROOT}/batch_run_summary.csv"
+batch_log="${LOGS_DIR}/batch_run.log"
+batch_csv="${TABLES_DIR}/batch_run_summary.csv"
+global_csv_source="${BUNDLES_DIR}/segmentation_metrics.csv"
+global_csv_target="${TABLES_DIR}/segmentation_metrics.csv"
 
-echo "case_code;status;height_cm;elapsed_seconds;bundle_dir;message" > "${batch_csv}"
+echo "case_code;status;height_cm;elapsed_seconds;bundle_dir;console_log;message" > "${batch_csv}"
+
+copy_if_exists() {
+  local source_path="$1"
+  local target_path="$2"
+  if [[ -f "${source_path}" ]]; then
+    cp -f "${source_path}" "${target_path}"
+  fi
+}
+
+sync_case_exports() {
+  local case_code="$1"
+  local bundle_dir="$2"
+
+  copy_if_exists \
+    "${bundle_dir}/abdominal_muscles_multilabel.nii.gz" \
+    "${EXPORTS_3D_DIR}/abdominal_muscles/${case_code}__abdominal_muscles_multilabel.nii.gz"
+
+  copy_if_exists \
+    "${bundle_dir}/odiasp/ODIASP_multilabel.nii.gz" \
+    "${EXPORTS_3D_DIR}/odiasp/${case_code}__ODIASP_multilabel.nii.gz"
+
+  copy_if_exists \
+    "${bundle_dir}/tissue/tissue_4_types_original_multilabel.nii.gz" \
+    "${EXPORTS_3D_DIR}/tissue_original/${case_code}__tissue_4_types_original_multilabel.nii.gz"
+
+  copy_if_exists \
+    "${bundle_dir}/tissue/tissue_4_types_T4_L4_multilabel.nii.gz" \
+    "${EXPORTS_3D_DIR}/tissue_T4_L4/${case_code}__tissue_4_types_T4_L4_multilabel.nii.gz"
+
+  copy_if_exists \
+    "${bundle_dir}/total/total_multilabel.nii.gz" \
+    "${EXPORTS_3D_DIR}/total/${case_code}__total_multilabel.nii.gz"
+}
+
+sync_global_csv() {
+  if [[ -f "${global_csv_source}" ]]; then
+    cp -f "${global_csv_source}" "${global_csv_target}"
+  fi
+}
 
 mapfile -t case_dirs < <(find "${INPUT_ROOT}" -mindepth 1 -maxdepth 1 -type d -name 'PAT_*' | sort)
 
@@ -47,36 +101,48 @@ if [[ "${#case_dirs[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-echo "Batch start: $(date -Iseconds)" | tee -a "${batch_log}"
-echo "Input root : ${INPUT_ROOT}" | tee -a "${batch_log}"
-echo "Cases      : ${#case_dirs[@]}" | tee -a "${batch_log}"
-echo "Output root: ${OUTPUT_ROOT}" | tee -a "${batch_log}"
+{
+  echo "Batch start : $(date -Iseconds)"
+  echo "Repo root   : ${REPO_ROOT}"
+  echo "Input root  : ${INPUT_ROOT}"
+  echo "Cases       : ${#case_dirs[@]}"
+  echo "Run root    : ${RUN_ROOT}"
+  echo "Bundles dir : ${BUNDLES_DIR}"
+  echo "Logs dir    : ${LOGS_DIR}"
+  echo "Tables dir  : ${TABLES_DIR}"
+  echo "3D dir      : ${EXPORTS_3D_DIR}"
+} | tee -a "${batch_log}"
 
 for case_dir in "${case_dirs[@]}"; do
   case_code="$(basename "${case_dir}")"
-  bundle_dir="${OUTPUT_ROOT}/${case_code}"
+  bundle_dir="${BUNDLES_DIR}/${case_code}"
+  case_log="${LOGS_DIR}/${case_code}.console.log"
+  case_time="${LOGS_DIR}/${case_code}.elapsed_seconds.txt"
+  height_err="${LOGS_DIR}/${case_code}.height.err"
 
   if [[ "${SKIP_EXISTING}" == "1" && -d "${bundle_dir}" ]]; then
     echo "[SKIP] ${case_code}: bundle already exists at ${bundle_dir}" | tee -a "${batch_log}"
-    echo "${case_code};skipped_existing;;;${bundle_dir};bundle already exists" >> "${batch_csv}"
+    sync_case_exports "${case_code}" "${bundle_dir}"
+    sync_global_csv
+    echo "${case_code};skipped_existing;;;${bundle_dir};${case_log};bundle already exists" >> "${batch_csv}"
     continue
   fi
 
-  if ! height_cm="$("${PYTHON_BIN}" "${REPO_ROOT}/gpu_rent/lookup_case_height.py" --case-dir "${case_dir}" --metadata-csv "${CASE_METADATA_CSV}" 2>/tmp/${case_code}.height.err)"; then
-    message="$(tr '\n' ' ' < /tmp/${case_code}.height.err | sed 's/;/,/g')"
+  if ! height_cm="$("${PYTHON_BIN}" "${REPO_ROOT}/gpu_rent/lookup_case_height.py" --case-dir "${case_dir}" --metadata-csv "${CASE_METADATA_CSV}" 2>"${height_err}")"; then
+    message="$(tr '\n' ' ' < "${height_err}" | sed 's/;/,/g')"
     echo "[SKIP] ${case_code}: ${message}" | tee -a "${batch_log}"
-    echo "${case_code};missing_height;;;${bundle_dir};${message}" >> "${batch_csv}"
+    echo "${case_code};missing_height;;;${bundle_dir};${case_log};${message}" >> "${batch_csv}"
     continue
   fi
 
   start_epoch="$(date +%s)"
-  echo "[START] ${case_code} height=${height_cm} $(date -Iseconds)" | tee -a "${batch_log}"
+  echo "[START] ${case_code}: height=${height_cm} $(date -Iseconds)" | tee -a "${batch_log}"
 
   cmd=(
     "${PYTHON_BIN}"
     -m gpu_rent.segment_abdominal_muscles_gpu
     --input-dicom "${case_dir}"
-    --output-root "${OUTPUT_ROOT}"
+    --output-root "${BUNDLES_DIR}"
     --bundle-name "${case_code}"
     --device "${TOTALSEG_DEVICE}"
     --height-cm "${height_cm}"
@@ -99,24 +165,33 @@ for case_dir in "${case_dirs[@]}"; do
     cmd+=(--with-tocsv)
   fi
 
-  case_log="${OUTPUT_ROOT}/${case_code}.console.log"
   if "${cmd[@]}" >"${case_log}" 2>&1; then
     end_epoch="$(date +%s)"
     elapsed="$((end_epoch - start_epoch))"
-    echo "${elapsed}" > "${OUTPUT_ROOT}/${case_code}.elapsed_seconds.txt"
+    printf '%s\n' "${elapsed}" > "${case_time}"
+    sync_case_exports "${case_code}" "${bundle_dir}"
+    sync_global_csv
     echo "[OK] ${case_code}: ${elapsed}s" | tee -a "${batch_log}"
-    echo "${case_code};ok;${height_cm};${elapsed};${bundle_dir};" >> "${batch_csv}"
+    echo "${case_code};ok;${height_cm};${elapsed};${bundle_dir};${case_log};" >> "${batch_csv}"
   else
     end_epoch="$(date +%s)"
     elapsed="$((end_epoch - start_epoch))"
-    echo "${elapsed}" > "${OUTPUT_ROOT}/${case_code}.elapsed_seconds.txt"
+    printf '%s\n' "${elapsed}" > "${case_time}"
+    sync_case_exports "${case_code}" "${bundle_dir}"
+    sync_global_csv
     echo "[ERROR] ${case_code}: ${elapsed}s see ${case_log}" | tee -a "${batch_log}"
-    echo "${case_code};error;${height_cm};${elapsed};${bundle_dir};see ${case_log}" >> "${batch_csv}"
+    echo "${case_code};error;${height_cm};${elapsed};${bundle_dir};${case_log};see ${case_log}" >> "${batch_csv}"
     if [[ "${STOP_ON_ERROR}" == "1" ]]; then
       exit 1
     fi
   fi
 done
 
-echo "Batch end: $(date -Iseconds)" | tee -a "${batch_log}"
-echo "Summary : ${batch_csv}" | tee -a "${batch_log}"
+sync_global_csv
+
+{
+  echo "Batch end   : $(date -Iseconds)"
+  echo "Summary CSV : ${batch_csv}"
+  echo "Metrics CSV : ${global_csv_target}"
+  echo "3D exports  : ${EXPORTS_3D_DIR}"
+} | tee -a "${batch_log}"
