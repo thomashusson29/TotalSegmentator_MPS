@@ -128,15 +128,18 @@ for case_dir in "${case_dirs[@]}"; do
     continue
   fi
 
+  height_cm=""
+  height_status="found"
+  height_message=""
   if ! height_cm="$("${PYTHON_BIN}" "${REPO_ROOT}/gpu_rent/lookup_case_height.py" --case-dir "${case_dir}" --metadata-csv "${CASE_METADATA_CSV}" 2>"${height_err}")"; then
-    message="$(tr '\n' ' ' < "${height_err}" | sed 's/;/,/g')"
-    echo "[SKIP] ${case_code}: ${message}" | tee -a "${batch_log}"
-    echo "${case_code};missing_height;;;${bundle_dir};${case_log};${message}" >> "${batch_csv}"
-    continue
+    height_cm=""
+    height_status="missing"
+    height_message="$(tr '\n' ' ' < "${height_err}" | sed 's/;/,/g')"
+    echo "[WARN] ${case_code}: running without height (${height_message})" | tee -a "${batch_log}"
   fi
 
   start_epoch="$(date +%s)"
-  echo "[START] ${case_code}: height=${height_cm} $(date -Iseconds)" | tee -a "${batch_log}"
+  echo "[START] ${case_code}: height=${height_cm:-NA} $(date -Iseconds)" | tee -a "${batch_log}"
 
   cmd=(
     "${PYTHON_BIN}"
@@ -145,9 +148,12 @@ for case_dir in "${case_dirs[@]}"; do
     --output-root "${BUNDLES_DIR}"
     --bundle-name "${case_code}"
     --device "${TOTALSEG_DEVICE}"
-    --height-cm "${height_cm}"
     --totalseg-license-number "${TOTALSEG_LICENSE_NUMBER}"
   )
+
+  if [[ -n "${height_cm}" ]]; then
+    cmd+=(--height-cm "${height_cm}")
+  fi
 
   if [[ "${WITH_MUSCLES}" == "1" ]]; then
     cmd+=(--with-muscles)
@@ -171,16 +177,26 @@ for case_dir in "${case_dirs[@]}"; do
     printf '%s\n' "${elapsed}" > "${case_time}"
     sync_case_exports "${case_code}" "${bundle_dir}"
     sync_global_csv
-    echo "[OK] ${case_code}: ${elapsed}s" | tee -a "${batch_log}"
-    echo "${case_code};ok;${height_cm};${elapsed};${bundle_dir};${case_log};" >> "${batch_csv}"
+    if [[ "${height_status}" == "missing" ]]; then
+      echo "[OK] ${case_code}: ${elapsed}s (without height)" | tee -a "${batch_log}"
+      echo "${case_code};ok_missing_height;;${elapsed};${bundle_dir};${case_log};${height_message}" >> "${batch_csv}"
+    else
+      echo "[OK] ${case_code}: ${elapsed}s" | tee -a "${batch_log}"
+      echo "${case_code};ok;${height_cm};${elapsed};${bundle_dir};${case_log};" >> "${batch_csv}"
+    fi
   else
     end_epoch="$(date +%s)"
     elapsed="$((end_epoch - start_epoch))"
     printf '%s\n' "${elapsed}" > "${case_time}"
     sync_case_exports "${case_code}" "${bundle_dir}"
     sync_global_csv
-    echo "[ERROR] ${case_code}: ${elapsed}s see ${case_log}" | tee -a "${batch_log}"
-    echo "${case_code};error;${height_cm};${elapsed};${bundle_dir};${case_log};see ${case_log}" >> "${batch_csv}"
+    if [[ "${height_status}" == "missing" ]]; then
+      echo "[ERROR] ${case_code}: ${elapsed}s without height see ${case_log}" | tee -a "${batch_log}"
+      echo "${case_code};error_missing_height;;${elapsed};${bundle_dir};${case_log};${height_message} | see ${case_log}" >> "${batch_csv}"
+    else
+      echo "[ERROR] ${case_code}: ${elapsed}s see ${case_log}" | tee -a "${batch_log}"
+      echo "${case_code};error;${height_cm};${elapsed};${bundle_dir};${case_log};see ${case_log}" >> "${batch_csv}"
+    fi
     if [[ "${STOP_ON_ERROR}" == "1" ]]; then
       exit 1
     fi
