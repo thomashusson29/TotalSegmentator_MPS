@@ -16,6 +16,9 @@ WITH_TOCSV="${WITH_TOCSV:-1}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
 
+PATIENT_SELECTION="${PATIENT_SELECTION:-}"
+CASE_SELECTION="${CASE_SELECTION:-}"
+
 RUN_NAME="${RUN_NAME:-batch_$(date +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${RUN_ROOT:-/workspace/run_outputs/${RUN_NAME}}"
 BUNDLES_DIR="${BUNDLES_DIR:-${RUN_ROOT}/bundles}"
@@ -94,10 +97,98 @@ sync_global_csv() {
   fi
 }
 
-mapfile -t case_dirs < <(find "${INPUT_ROOT}" -mindepth 1 -maxdepth 1 -type d -name 'PAT_*' | sort)
+normalize_patient_code() {
+  local token="$1"
+  token="${token//,/}"
+  if [[ "${token}" =~ ^PAT_([0-9]{4})$ ]]; then
+    printf 'PAT_%04d\n' "${BASH_REMATCH[1]#0}"
+    return 0
+  fi
+  if [[ "${token}" =~ ^[0-9]+$ ]]; then
+    printf 'PAT_%04d\n' "${token#0}"
+    return 0
+  fi
+  return 1
+}
+
+declare -A selected_patients=()
+declare -A selected_cases=()
+
+if [[ -n "${PATIENT_SELECTION}" ]]; then
+  while read -r token; do
+    [[ -z "${token}" ]] && continue
+    if [[ "${token}" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      start="${BASH_REMATCH[1]}"
+      end="${BASH_REMATCH[2]}"
+      if (( start <= end )); then
+        for ((i=start; i<=end; i++)); do
+          selected_patients["$(printf 'PAT_%04d' "${i}")"]=1
+        done
+      else
+        for ((i=start; i>=end; i--)); do
+          selected_patients["$(printf 'PAT_%04d' "${i}")"]=1
+        done
+      fi
+      continue
+    fi
+
+    if [[ "${token}" =~ ^PAT_([0-9]{4})-PAT_([0-9]{4})$ ]]; then
+      start=$((10#${BASH_REMATCH[1]}))
+      end=$((10#${BASH_REMATCH[2]}))
+      if (( start <= end )); then
+        for ((i=start; i<=end; i++)); do
+          selected_patients["$(printf 'PAT_%04d' "${i}")"]=1
+        done
+      else
+        for ((i=start; i>=end; i--)); do
+          selected_patients["$(printf 'PAT_%04d' "${i}")"]=1
+        done
+      fi
+      continue
+    fi
+
+    if patient_code="$(normalize_patient_code "${token}")"; then
+      selected_patients["${patient_code}"]=1
+    else
+      echo "Invalid PATIENT_SELECTION token: ${token}" >&2
+      exit 1
+    fi
+  done < <(printf '%s\n' "${PATIENT_SELECTION}" | tr ', ' '\n\n')
+fi
+
+if [[ -n "${CASE_SELECTION}" ]]; then
+  while read -r token; do
+    [[ -z "${token}" ]] && continue
+    selected_cases["$(basename "${token}")"]=1
+  done < <(printf '%s\n' "${CASE_SELECTION}" | tr ', ' '\n\n')
+fi
+
+all_case_dirs=()
+mapfile -t all_case_dirs < <(find "${INPUT_ROOT}" -mindepth 1 -maxdepth 1 -type d -name 'PAT_*' | sort)
+
+case_dirs=()
+for case_dir in "${all_case_dirs[@]}"; do
+  case_code="$(basename "${case_dir}")"
+  patient_code="${case_code%%_CASE_*}"
+
+  include_case=1
+  if [[ "${#selected_patients[@]}" -gt 0 || "${#selected_cases[@]}" -gt 0 ]]; then
+    include_case=0
+    if [[ "${#selected_patients[@]}" -gt 0 && -n "${selected_patients[${patient_code}]:-}" ]]; then
+      include_case=1
+    fi
+    if [[ "${#selected_cases[@]}" -gt 0 && -n "${selected_cases[${case_code}]:-}" ]]; then
+      include_case=1
+    fi
+  fi
+
+  if [[ "${include_case}" == "1" ]]; then
+    case_dirs+=("${case_dir}")
+  fi
+done
 
 if [[ "${#case_dirs[@]}" -eq 0 ]]; then
-  echo "No PAT_* case directories found under ${INPUT_ROOT}" >&2
+  echo "No matching case directories found under ${INPUT_ROOT}" >&2
   exit 1
 fi
 
@@ -106,6 +197,8 @@ fi
   echo "Repo root   : ${REPO_ROOT}"
   echo "Input root  : ${INPUT_ROOT}"
   echo "Cases       : ${#case_dirs[@]}"
+  echo "Patient sel : ${PATIENT_SELECTION:-<all>}"
+  echo "Case sel    : ${CASE_SELECTION:-<all>}"
   echo "Run root    : ${RUN_ROOT}"
   echo "Bundles dir : ${BUNDLES_DIR}"
   echo "Logs dir    : ${LOGS_DIR}"
