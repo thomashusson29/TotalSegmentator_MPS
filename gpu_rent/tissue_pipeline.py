@@ -229,6 +229,7 @@ def _write_variant(
 def run_tissue_postprocess(
     *,
     input_dicom: Path,
+    inference_input: Path,
     bundle_dir: Path,
     abdominal_nifti: Path,
     device: str,
@@ -273,7 +274,7 @@ def run_tissue_postprocess(
                 variant="original",
                 source_task=TISSUE_TASK,
                 segmentation_name="Tissue 4 Types Original",
-                input_source=input_dicom,
+                input_source=inference_input,
                 final_nifti=original_nifti,
                 source_nifti=None,
                 reference_image=abdominal_image,

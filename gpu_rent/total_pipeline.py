@@ -26,6 +26,7 @@ from .common import (
 def run_total_postprocess(
     *,
     input_dicom: Path,
+    inference_input: Path,
     bundle_dir: Path,
     device: str,
     height_cm: float | None,
@@ -42,7 +43,7 @@ def run_total_postprocess(
         reverse_map = reverse_label_map(label_map)
 
         run_totalseg_inference(
-            input_path=input_dicom,
+            input_path=inference_input,
             output_path=total_nifti,
             task=TOTAL_TASK,
             device=device,
@@ -129,4 +130,3 @@ def run_total_postprocess(
             stderr_log=stderr_path if stderr_path.exists() else None,
         )
         print(f"Total post-processing failed. Details written to: {total_dir / 'status.json'}")
-

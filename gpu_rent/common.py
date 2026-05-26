@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import colorsys
+import csv
 import json
 import os
 import shlex
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,11 @@ import nibabel as nib
 import numpy as np
 import SimpleITK as sitk
 from nibabel.nifti1 import Nifti1Extension
+
+try:
+    import pydicom
+except Exception:  # pragma: no cover
+    pydicom = None
 
 try:
     from scipy import ndimage
@@ -457,31 +464,199 @@ def mean_hu_or_none(ct_values: np.ndarray, mask: np.ndarray) -> float | None:
     return round_or_none(float(values.mean()))
 
 
-def dicom_series_files(input_dicom: Path) -> list[str]:
+def _series_metadata_from_first_file(files: list[str]) -> dict[str, str]:
+    if not files:
+        return {
+            "series_description": "",
+            "protocol_name": "",
+            "study_date": "",
+            "patient_id": "",
+            "patient_name": "",
+            "modality": "",
+            "image_type": "",
+        }
+
+    payload = {
+        "series_description": "",
+        "protocol_name": "",
+        "study_date": "",
+        "patient_id": "",
+        "patient_name": "",
+        "modality": "",
+        "image_type": "",
+    }
+    if pydicom is None:
+        return payload
+
+    try:
+        ds = pydicom.dcmread(files[0], stop_before_pixels=True, force=True)
+        payload["series_description"] = _normalized_text(str(getattr(ds, "SeriesDescription", "")))
+        payload["protocol_name"] = _normalized_text(str(getattr(ds, "ProtocolName", "")))
+        payload["study_date"] = _normalized_text(str(getattr(ds, "StudyDate", "")))
+        payload["patient_id"] = _normalized_text(str(getattr(ds, "PatientID", "")))
+        payload["patient_name"] = _normalized_text(str(getattr(ds, "PatientName", "")))
+        payload["modality"] = _normalized_text(str(getattr(ds, "Modality", "")))
+        image_type = getattr(ds, "ImageType", [])
+        if isinstance(image_type, (list, tuple)):
+            payload["image_type"] = _normalized_text("|".join(str(part) for part in image_type))
+        else:
+            payload["image_type"] = _normalized_text(str(image_type))
+    except Exception:
+        pass
+    return payload
+
+
+def _score_series_candidate(metadata: dict[str, Any], file_count: int) -> tuple[int, int]:
+    text = " ".join(
+        [
+            str(metadata.get("series_description", "")),
+            str(metadata.get("protocol_name", "")),
+            str(metadata.get("image_type", "")),
+        ]
+    ).lower()
+
+    score = 0
+    if metadata.get("modality", "").upper() == "CT":
+        score += 1000
+
+    portal_terms = ("portal", "portale", "portail", "parench", "pvp", "venous", "veineux")
+    arterial_terms = ("arteriel", "artériel", "arterial")
+    delayed_terms = ("tardif", "delayed", "delay", "late")
+    noiv_terms = ("sans iv", "ss iv", "non inject", "without iv", "no iv")
+    reject_terms = ("topogram", "scout", "localizer", "survey", "pilot", "repere", "repérage", "monitoring")
+
+    if any(term in text for term in portal_terms):
+        score += 5000
+    if any(term in text for term in arterial_terms):
+        score += 1500
+    if any(term in text for term in delayed_terms):
+        score += 1000
+    if any(term in text for term in noiv_terms):
+        score -= 800
+    if any(term in text for term in reject_terms):
+        score -= 10000
+
+    if file_count < 10:
+        score -= 4000
+    elif file_count < 50:
+        score -= 500
+
+    return (score, file_count)
+
+
+def discover_dicom_series(input_dicom: Path) -> list[dict[str, Any]]:
     if not input_dicom.exists():
         raise FileNotFoundError(f"Input DICOM path not found: {input_dicom}")
 
     reader = sitk.ImageSeriesReader()
     sitk.ProcessObject.SetGlobalWarningDisplay(False)
     try:
-        best_files: list[str] = []
+        candidates: list[dict[str, Any]] = []
         for dirpath, _, _ in os.walk(input_dicom):
             series_ids = reader.GetGDCMSeriesIDs(dirpath) or []
             for series_id in series_ids:
                 files = list(reader.GetGDCMSeriesFileNames(dirpath, series_id))
-                if len(files) > len(best_files):
-                    best_files = files
-        if not best_files:
+                metadata = _series_metadata_from_first_file(files)
+                score, file_count = _score_series_candidate(metadata, len(files))
+                candidates.append(
+                    {
+                        "series_id": _normalized_text(str(series_id)),
+                        "series_dir": str(Path(dirpath)),
+                        "files": files,
+                        "file_count": file_count,
+                        "score": score,
+                        **metadata,
+                    }
+                )
+        if not candidates:
             raise RuntimeError(f"No DICOM series found under {input_dicom}")
-        return best_files
+        candidates.sort(key=lambda item: (item["score"], item["file_count"]), reverse=True)
+        return candidates
     finally:
         sitk.ProcessObject.SetGlobalWarningDisplay(True)
+
+
+def dicom_series_files(input_dicom: Path) -> list[str]:
+    return list(discover_dicom_series(input_dicom)[0]["files"])
 
 
 def read_dicom_image(input_dicom: Path) -> sitk.Image:
     reader = sitk.ImageSeriesReader()
     reader.SetFileNames(dicom_series_files(input_dicom))
     return reader.Execute()
+
+
+def _normalized_text(value: str) -> str:
+    return unicodedata.normalize("NFC", (value or "").strip())
+
+
+def _series_summary_from_files(files: list[str]) -> dict[str, Any]:
+    first_file = Path(files[0])
+    parent_dir = first_file.parent
+    metadata = _series_metadata_from_first_file(files)
+    return {
+        "series_dir": str(parent_dir),
+        "file_count": len(files),
+        **metadata,
+    }
+
+
+def prepare_totalseg_input(input_source: Path, working_dir: Path) -> Path:
+    if input_source.is_file():
+        return input_source
+
+    working_dir.mkdir(parents=True, exist_ok=True)
+    prepared_nifti = working_dir / "prepared_input_ct.nii.gz"
+    prepared_manifest = working_dir / "prepared_input_series.csv"
+    series_candidates = discover_dicom_series(input_source)
+    chosen = series_candidates[0]
+    reader = sitk.ImageSeriesReader()
+    reader.SetFileNames(list(chosen["files"]))
+    image = reader.Execute()
+    sitk.WriteImage(image, str(prepared_nifti), useCompression=True)
+    with prepared_manifest.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "source_root",
+                "prepared_nifti",
+                "selected",
+                "score",
+                "series_id",
+                "series_dir",
+                "file_count",
+                "series_description",
+                "protocol_name",
+                "study_date",
+                "patient_id",
+                "patient_name",
+                "modality",
+                "image_type",
+            ],
+            delimiter=";",
+        )
+        writer.writeheader()
+        for index, candidate in enumerate(series_candidates):
+            writer.writerow(
+                {
+                    "source_root": str(input_source),
+                    "prepared_nifti": str(prepared_nifti),
+                    "selected": "1" if index == 0 else "0",
+                    "score": candidate["score"],
+                    "series_id": candidate["series_id"],
+                    "series_dir": candidate["series_dir"],
+                    "file_count": candidate["file_count"],
+                    "series_description": candidate["series_description"],
+                    "protocol_name": candidate["protocol_name"],
+                    "study_date": candidate["study_date"],
+                    "patient_id": candidate["patient_id"],
+                    "patient_name": candidate["patient_name"],
+                    "modality": candidate["modality"],
+                    "image_type": candidate["image_type"],
+                }
+            )
+
+    return prepared_nifti
 
 
 def resample_ct_to_reference_xyz(input_source: Path, reference_nifti: Path) -> np.ndarray:
@@ -584,4 +759,3 @@ def write_latest_pointers(output_root: Path, bundle_dir: Path) -> None:
         "runpy.run_path(BUNDLE_DIR + '/import_into_slicer.py', init_globals={'BUNDLE_DIR': BUNDLE_DIR})\n",
     )
     latest_importer.chmod(0o755)
-

@@ -192,6 +192,7 @@ def _save_sagittal_preview(path: Path, ct_sagittal: np.ndarray, vertebra_mask_sa
 def run_odiasp_postprocess(
     *,
     input_dicom: Path,
+    inference_input: Path,
     bundle_dir: Path,
     abdominal_nifti: Path,
     device: str,
@@ -212,7 +213,7 @@ def run_odiasp_postprocess(
 
         vertebra_source_nifti = odiasp_dir / "source_vertebrae_L3_multilabel.nii.gz"
         run_totalseg_inference(
-            input_path=input_dicom,
+            input_path=inference_input,
             output_path=vertebra_source_nifti,
             task=TOTAL_TASK,
             device=device,
@@ -348,4 +349,3 @@ def run_odiasp_postprocess(
             stderr_log=stderr_log if stderr_log.exists() else None,
         )
         print(f"ODIASP post-processing failed. Details written to: {odiasp_dir / 'status.json'}")
-

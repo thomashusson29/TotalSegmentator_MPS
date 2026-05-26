@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+import unicodedata
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,15 +22,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _normalized_case_code(value: str) -> str:
+    return unicodedata.normalize("NFC", (value or "").strip())
+
+
 def main() -> int:
     args = parse_args()
-    case_code = args.case_code or (args.case_dir.name if args.case_dir else "")
+    case_code = _normalized_case_code(args.case_code or (args.case_dir.name if args.case_dir else ""))
     if not case_code:
         raise SystemExit("Provide --case-code or --case-dir.")
     with args.metadata_csv.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter=";")
         for row in reader:
-            if row.get("case_code") == case_code:
+            if _normalized_case_code(row.get("case_code", "")) == case_code:
                 height_cm = (row.get("height_cm") or "").strip()
                 if not height_cm:
                     raise SystemExit(f"No height found for {case_code} in {args.metadata_csv}")

@@ -10,6 +10,7 @@ from .abdominal_muscles_metrics import build_abdominal_muscles_metrics
 from .common import (
     ABDOMINAL_TASK,
     DEFAULT_OUTPUT_ROOT,
+    prepare_totalseg_input,
     read_dicom_image,
     resample_ct_to_reference_xyz,
     resolve_device_request,
@@ -60,6 +61,7 @@ def resolve_requested_outputs(args: argparse.Namespace) -> tuple[bool, bool, boo
 def run_abdominal_muscles_pipeline(
     *,
     input_dicom: Path,
+    inference_input: Path,
     bundle_dir: Path,
     device: str,
     public_output: bool,
@@ -69,7 +71,7 @@ def run_abdominal_muscles_pipeline(
     abdominal_nifti = bundle_dir / "abdominal_muscles_multilabel.nii.gz"
 
     run_totalseg_inference(
-        input_path=input_dicom,
+        input_path=inference_input,
         output_path=abdominal_nifti,
         task=ABDOMINAL_TASK,
         device=device,
@@ -115,15 +117,20 @@ def main() -> int:
     bundle_name = args.bundle_name or build_bundle_name(args.input_dicom)
     bundle_dir = args.output_root / bundle_name
     bundle_dir.mkdir(parents=True, exist_ok=True)
+    prepared_input_dir = bundle_dir / "_prepared_input"
 
     resolved_device = resolve_device_request(args.device)
     print(f"Resolved TotalSegmentator device: {resolved_device}")
+    inference_input = prepare_totalseg_input(args.input_dicom, prepared_input_dir)
+    if inference_input != args.input_dicom:
+        print(f"Prepared TotalSegmentator input: {inference_input}")
 
     needs_abdominal = with_muscles or with_odiasp or with_tissue
     abdominal_nifti: Path | None = None
     if needs_abdominal:
         abdominal_nifti = run_abdominal_muscles_pipeline(
             input_dicom=args.input_dicom,
+            inference_input=inference_input,
             bundle_dir=bundle_dir,
             device=resolved_device,
             public_output=with_muscles,
@@ -135,6 +142,7 @@ def main() -> int:
             raise RuntimeError("Internal error: tissue pipeline requested without abdominal_muscles dependency.")
         run_tissue_postprocess(
             input_dicom=args.input_dicom,
+            inference_input=inference_input,
             bundle_dir=bundle_dir,
             abdominal_nifti=abdominal_nifti,
             device=resolved_device,
@@ -147,6 +155,7 @@ def main() -> int:
             raise RuntimeError("Internal error: ODIASP pipeline requested without abdominal_muscles dependency.")
         run_odiasp_postprocess(
             input_dicom=args.input_dicom,
+            inference_input=inference_input,
             bundle_dir=bundle_dir,
             abdominal_nifti=abdominal_nifti,
             device=resolved_device,
@@ -157,6 +166,7 @@ def main() -> int:
     if with_total:
         run_total_postprocess(
             input_dicom=args.input_dicom,
+            inference_input=inference_input,
             bundle_dir=bundle_dir,
             device=resolved_device,
             height_cm=args.height_cm,
@@ -185,4 +195,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
