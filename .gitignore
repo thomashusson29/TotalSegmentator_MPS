@@ -9,6 +9,14 @@ __pycache__/
 
 # Generated outputs
 output/
+runpod_results/
+
+# Local-only workbooks / notes
+BDD_memoire_ER_versionThomas.xlsx
+BDD_memoire_ER_versionThomas_PAT0026_filled_L3.xlsx
+BDD_memoire_ER_versionThomas_PAT0026_mapping.xlsx
+exemples.pdf
+gpu_rent/suivi_runpod.md
 
 # --- git-ignore-auto (2026-04-07) ---
 /output/scalarvolume17/abdominal_muscles.dcm

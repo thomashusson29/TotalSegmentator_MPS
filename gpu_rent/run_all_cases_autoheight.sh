@@ -6,6 +6,7 @@ INPUT_ROOT="${INPUT_ROOT:-/workspace/tdm_elena_savier_anonymized_cohort26_keep_p
 CASE_METADATA_CSV="${CASE_METADATA_CSV:-${INPUT_ROOT}/case_metadata.csv}"
 TOTALSEG_DEVICE="${TOTALSEG_DEVICE:-gpu}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
+CASE_NAME_GLOB="${CASE_NAME_GLOB:-PAT_*}"
 
 WITH_MUSCLES="${WITH_MUSCLES:-1}"
 WITH_ODIASP="${WITH_ODIASP:-1}"
@@ -164,7 +165,7 @@ if [[ -n "${CASE_SELECTION}" ]]; then
 fi
 
 all_case_dirs=()
-mapfile -t all_case_dirs < <(find "${INPUT_ROOT}" -mindepth 1 -maxdepth 1 -type d -name 'PAT_*' | sort)
+mapfile -t all_case_dirs < <(find "${INPUT_ROOT}" -mindepth 1 -maxdepth 1 -type d -name "${CASE_NAME_GLOB}" | sort)
 
 case_dirs=()
 for case_dir in "${all_case_dirs[@]}"; do
@@ -197,6 +198,7 @@ fi
   echo "Repo root   : ${REPO_ROOT}"
   echo "Input root  : ${INPUT_ROOT}"
   echo "Cases       : ${#case_dirs[@]}"
+  echo "Case glob   : ${CASE_NAME_GLOB}"
   echo "Patient sel : ${PATIENT_SELECTION:-<all>}"
   echo "Case sel    : ${CASE_SELECTION:-<all>}"
   echo "Run root    : ${RUN_ROOT}"
